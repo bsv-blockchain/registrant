@@ -8,7 +8,7 @@ import { RegistryCard } from "@/components/RegistryCard";
 import { RegistryForm } from "@/components/RegistryForm";
 import { DefinitionData, DefinitionType, IdentityClient, RegistryClient, RegistryRecord, WalletClient } from '@bsv/sdk'
 import { useAuth } from "@/contexts/AuthContext";
-import { IdentityCard } from 'metanet-identity-react'
+import { IdentityCard } from '@bsv/identity-react'
 
 const Index = () => {
   const { toast } = useToast();
