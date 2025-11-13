@@ -1,27 +1,61 @@
 
-import { act, useEffect, useState } from "react";
+import { act, useEffect, useState, useMemo, useCallback } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, PackageSearch, LogOut } from "lucide-react";
 import { RegistryCard } from "@/components/RegistryCard";
 import { RegistryForm } from "@/components/RegistryForm";
-import { DefinitionData, DefinitionType, IdentityClient, RegistryClient, RegistryRecord, WalletClient } from '@bsv/sdk'
+import { DefinitionData, DefinitionType, RegistryClient, RegistryRecord, LookupResolver } from '@bsv/sdk'
 import { useAuth } from "@/contexts/AuthContext";
-import { IdentityCard } from 'metanet-identity-react'
 
 const Index = () => {
   const { toast } = useToast();
-  const { logout } = useAuth();
+  const { auth, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<DefinitionType>("basket");
   const [currentUser, setCurrentUser] = useState('unknown')
   const [items, setItems] = useState<RegistryRecord[]>([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<RegistryRecord | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const wallet = useAuth().auth.wallet
-  const client = new RegistryClient(wallet)
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [revokingItemId, setRevokingItemId] = useState<string | null>(null);
 
-  const loadItems = async () => {
+  // Ensure wallet is available and create RegistryClient only when wallet changes
+  const { wallet, client } = useMemo(() => {
+    const wallet = auth.wallet;
+    if (!wallet) {
+      return { wallet: null, client: null };
+    }
+
+    try {
+      const client = new RegistryClient(wallet, {
+        acceptDelayedBroadcast: false,
+        resolver: new LookupResolver({
+          hostOverrides: {
+            'ls_slap': ['https://users.bapp.dev'],
+            'ls_ship': ['https://users.bapp.dev']
+          }
+        })
+      });
+      return { wallet, client };
+    } catch (error) {
+      console.error('Failed to create RegistryClient:', error);
+      toast({
+        title: "Wallet Error",
+        description: "Failed to initialize wallet client. Please try logging in again.",
+        variant: "destructive",
+      });
+      return { wallet: null, client: null };
+    }
+  }, [auth.wallet, toast]);
+
+  const loadItems = useCallback(async () => {
+    if (!client) {
+      setIsLoading(false);
+      return;
+    }
+
     try {
       console.log('active tab', activeTab)
       const records = await client.listOwnRegistryEntries(activeTab);
@@ -36,19 +70,33 @@ const Index = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [client, activeTab, toast]);
 
   useEffect(() => {
     (async () => {
-      if (currentUser === 'unknown') {
-        setCurrentUser((await wallet.getPublicKey({ identityKey: true })).publicKey)
+      if (currentUser === 'unknown' && wallet) {
+        try {
+          setCurrentUser((await wallet.getPublicKey({ identityKey: true })).publicKey)
+        } catch (error) {
+          console.error('Failed to get public key:', error);
+        }
       }
     })()
     setIsLoading(true);
     loadItems();
-  }, [activeTab]);
+  }, [activeTab, wallet, currentUser, loadItems]);
 
   const handleRegister = async (formData: DefinitionData) => {
+    if (!client) {
+      toast({
+        title: "Wallet Error",
+        description: "Wallet client not available. Please try logging in again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
     try {
       await client.registerDefinition(formData);
       setIsFormOpen(false);
@@ -63,12 +111,65 @@ const Index = () => {
         description: error.message,
         variant: "destructive",
       });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const handleRevoke = async (item: RegistryRecord) => {
+  const handleUpdate = async (formData: DefinitionData) => {
+    if (!client || !editingItem) {
+      toast({
+        title: "Error",
+        description: "Cannot update: missing client or item data.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
     try {
-      await client.revokeOwnRegistryEntry(item);
+      await client.updateDefinition(editingItem, formData);
+      setIsFormOpen(false);
+      setEditingItem(null);
+      toast({
+        title: "Success",
+        description: "Item updated successfully",
+      });
+      loadItems();
+    } catch (error) {
+      toast({
+        title: "Update failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleEdit = (item: RegistryRecord) => {
+    setEditingItem(item);
+    setIsFormOpen(true);
+  };
+
+  const handleCloseForm = () => {
+    setIsFormOpen(false);
+    setEditingItem(null);
+  };
+
+  const handleRevoke = async (item: RegistryRecord) => {
+    if (!client) {
+      toast({
+        title: "Wallet Error",
+        description: "Wallet client not available. Please try logging in again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setRevokingItemId(item.txid!);
+    try {
+      await client.removeDefinition(item);
       toast({
         title: "Success",
         description: "Item revoked successfully",
@@ -76,14 +177,26 @@ const Index = () => {
       loadItems();
     } catch (error) {
       toast({
-        title: "Revocation failed",
-        description: "Failed to revoke item. Please try again.",
+        title: "Revoke failed",
+        description: error.message,
         variant: "destructive",
       });
+    } finally {
+      setRevokingItemId(null);
     }
   };
 
   const renderContent = () => {
+    if (!wallet || !client) {
+      return (
+        <div className="flex flex-col items-center justify-center h-48 text-muted-foreground">
+          <PackageSearch className="h-12 w-12 mb-4" />
+          <p>Wallet not available</p>
+          <p className="text-sm mt-2 text-center px-4">Please ensure your wallet is properly connected and try logging in again</p>
+        </div>
+      );
+    }
+
     if (isLoading) {
       return (
         <div className="flex items-center justify-center h-48">
@@ -112,6 +225,8 @@ const Index = () => {
             key={item.txid}
             item={item}
             onRevoke={() => handleRevoke(item)}
+            onEdit={() => handleEdit(item)}
+            isRevoking={revokingItemId === item.txid}
           />
         ))}
       </div>
@@ -143,6 +258,7 @@ const Index = () => {
           </TabsList>
           <Button
             onClick={() => setIsFormOpen(true)}
+            disabled={!wallet || !client}
             size={items.length === 0 ? "lg" : "default"}
             className={`w-full sm:w-auto ${items.length === 0 ? "animate-pulse" : ""}`}
           >
@@ -166,8 +282,10 @@ const Index = () => {
       <RegistryForm
         type={activeTab}
         open={isFormOpen}
-        onClose={() => setIsFormOpen(false)}
-        onSubmit={handleRegister}
+        onClose={handleCloseForm}
+        onSubmit={editingItem ? handleUpdate : handleRegister}
+        existingData={editingItem || undefined}
+        isSubmitting={isSubmitting}
       />
     </div>
   );

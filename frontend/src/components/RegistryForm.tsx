@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -39,6 +39,8 @@ interface RegistryFormProps {
   open: boolean
   onClose: () => void
   onSubmit: (data: DefinitionData) => void
+  existingData?: DefinitionData
+  isSubmitting?: boolean
 }
 
 interface CertField {
@@ -52,8 +54,11 @@ export const RegistryForm = ({
   open,
   onClose,
   onSubmit,
+  existingData,
+  isSubmitting = false,
 }: RegistryFormProps) => {
-  const getInitialFormData = (): DefinitionData => {
+  const isEditMode = !!existingData;
+  const getInitialFormData = useCallback((): DefinitionData => {
     const baseData = {
       name: "",
       description: "",
@@ -83,10 +88,9 @@ export const RegistryForm = ({
           fields: {},
         }
     }
-  }
+  }, [type])
 
   const [formData, setFormData] = useState<DefinitionData>(getInitialFormData())
-  const [isSubmitting, setIsSubmitting] = useState(false)
   const [certFields, setCertFields] = useState<CertField[]>([])
 
   useEffect(() => {
@@ -109,31 +113,26 @@ export const RegistryForm = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setIsSubmitting(true)
-    try {
-      switch (type) {
-        case "basket":
-          formData.definitionType = "basket"
-          break
-        case "protocol":
-          formData.definitionType = "protocol"
-          break
-        case "certificate": {
-          const fieldsObj = certFields.reduce((acc, field) => {
-            if (field.key && field.value) {
-              acc[field.key] = field.value
-            }
-            return acc
-          }, {} as Record<string, CertificateFieldDescriptor>)
-          formData.definitionType = "certificate";
-          (formData as CertificateDefinitionData).fields = fieldsObj
-          break
-        }
+    switch (type) {
+      case "basket":
+        formData.definitionType = "basket"
+        break
+      case "protocol":
+        formData.definitionType = "protocol"
+        break
+      case "certificate": {
+        const fieldsObj = certFields.reduce((acc, field) => {
+          if (field.key && field.value) {
+            acc[field.key] = field.value
+          }
+          return acc
+        }, {} as Record<string, CertificateFieldDescriptor>)
+        formData.definitionType = "certificate";
+        (formData as CertificateDefinitionData).fields = fieldsObj
+        break
       }
-      await onSubmit(formData)
-    } finally {
-      setIsSubmitting(false)
     }
+    await onSubmit(formData)
   }
 
   const updateField = (field: string, value: string) => {
@@ -203,21 +202,35 @@ export const RegistryForm = ({
 
   useEffect(() => {
     if (open) {
-      setFormData(getInitialFormData())
-      setCertFields([])
-      setIsSubmitting(false)
+      if (existingData) {
+        // Pre-populate form with existing data
+        setFormData(existingData)
+        
+        // If certificate type, pre-populate the fields
+        if (existingData.definitionType === 'certificate' && 'fields' in existingData) {
+          const fields = Object.entries(existingData.fields || {}).map(([key, value]) => ({
+            key,
+            value,
+            isExpanded: false
+          }))
+          setCertFields(fields)
+        }
+      } else {
+        setFormData(getInitialFormData())
+        setCertFields([])
+      }
     }
-  }, [open])
+  }, [open, existingData, getInitialFormData])
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[525px] max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>
-            Register New {type.charAt(0).toUpperCase() + type.slice(1)}
+            {isEditMode ? 'Update' : 'Register New'} {type.charAt(0).toUpperCase() + type.slice(1)}
           </DialogTitle>
           <DialogDescription>
-            Fill in the details below to register a new {type} in the registry.
+            Fill in the details below to {isEditMode ? 'update' : 'register'} {isEditMode ? 'this' : 'a new'} {type} in the registry.
             Press{" "}
             <kbd className="px-2 py-1 text-xs rounded bg-muted">⌘ + Enter</kbd>{" "}
             to submit.
@@ -236,8 +249,13 @@ export const RegistryForm = ({
                   <Input
                     id="basketID"
                     required
+                    value={'basketID' in formData ? formData.basketID : ''}
                     onChange={(e) => updateField("basketID", e.target.value)}
+                    disabled={isEditMode}
                   />
+                  {isEditMode && (
+                    <p className="text-xs text-muted-foreground">Basket ID cannot be changed</p>
+                  )}
                 </div>
               </div>
             )}
@@ -249,13 +267,20 @@ export const RegistryForm = ({
                   <Input
                     id="protocolID"
                     required
+                    value={'protocolID' in formData ? formData.protocolID[1] : ''}
                     onChange={(e) => updateProtocolField("id", e.target.value)}
+                    disabled={isEditMode}
                   />
+                  {isEditMode && (
+                    <p className="text-xs text-muted-foreground">Protocol ID cannot be changed</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="protocolLevel">Security Level</Label>
                   <Select
+                    value={'protocolID' in formData ? String(formData.protocolID[0]) : undefined}
                     onValueChange={(value) => updateProtocolField("level", value)}
+                    disabled={isEditMode}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select security level" />
@@ -279,8 +304,13 @@ export const RegistryForm = ({
                   <Input
                     id="type"
                     required
+                    value={'type' in formData ? formData.type : ''}
                     onChange={(e) => updateField("type", e.target.value)}
+                    disabled={isEditMode}
                   />
+                  {isEditMode && (
+                    <p className="text-xs text-muted-foreground">Certificate type cannot be changed</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <div className="flex justify-between items-center mb-2">
@@ -449,6 +479,7 @@ export const RegistryForm = ({
               <Input
                 id="name"
                 required
+                value={formData.name || ''}
                 onChange={(e) => updateField("name", e.target.value)}
               />
             </div>
@@ -457,6 +488,7 @@ export const RegistryForm = ({
               <Label htmlFor="description">Description</Label>
               <Textarea
                 id="description"
+                value={formData.description || ''}
                 onChange={(e) => updateField("description", e.target.value)}
               />
             </div>
@@ -465,6 +497,7 @@ export const RegistryForm = ({
               <Label htmlFor="iconURL">Icon URL</Label>
               <Input
                 id="iconURL"
+                value={formData.iconURL || ''}
                 onChange={(e) => updateField("iconURL", e.target.value)}
               />
             </div>
@@ -474,6 +507,7 @@ export const RegistryForm = ({
               <Input
                 id="documentationURL"
                 type="url"
+                value={formData.documentationURL || ''}
                 onChange={(e) => updateField("documentationURL", e.target.value)}
               />
             </div>
@@ -489,7 +523,10 @@ export const RegistryForm = ({
             Cancel
           </Button>
           <Button type="submit" form="registryForm" disabled={isSubmitting}>
-            {isSubmitting ? "Registering..." : "Register"}
+            {isSubmitting 
+              ? (isEditMode ? "Updating..." : "Registering...") 
+              : (isEditMode ? "Update" : "Register")
+            }
           </Button>
         </DialogFooter>
       </DialogContent>

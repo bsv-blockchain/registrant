@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Wallet, Key } from "lucide-react";
+import { Wallet, Key, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { WalletClient } from "@bsv/sdk";
 import makeWallet from "@/lib/makeWallet";
@@ -11,6 +11,7 @@ import makeWallet from "@/lib/makeWallet";
 const Start = () => {
   const [privateKey, setPrivateKey] = useState("");
   const [showPrivateKeyInput, setShowPrivateKeyInput] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const { login } = useAuth();
   const { toast } = useToast();
 
@@ -34,8 +35,22 @@ const Start = () => {
       return;
     }
 
-    const wallet = await makeWallet('main', privateKey, 'https://storage.babbage.systems')
-    login('privateKey', wallet)
+    setIsLoggingIn(true);
+    try {
+      const wallet = await makeWallet('main', privateKey, 'https://storage.babbage.systems')
+      login('privateKey', wallet, privateKey)
+      toast({
+        title: "Logged in successfully",
+        description: "Your session will persist until you close the browser tab",
+      });
+    } catch (error) {
+      toast({
+        title: "Login failed",
+        description: error.message || "Failed to create wallet. Please check your private key.",
+        variant: "destructive",
+      });
+      setIsLoggingIn(false);
+    }
   };
 
   if (showPrivateKeyInput) {
@@ -55,16 +70,31 @@ const Start = () => {
                 type="password"
                 placeholder="Enter private key"
                 value={privateKey}
-                onChange={(e: { target: { value: any; }; }) => setPrivateKey(e.target.value)}
+                onChange={(e) => setPrivateKey(e.target.value)}
                 className="font-mono text-sm"
+                disabled={isLoggingIn}
               />
               <p className="text-xs sm:text-sm text-muted-foreground">
                 Your private key never leaves your browser and is only used to sign transactions
               </p>
             </div>
             <div className="space-x-4">
-              <Button type="submit">Login</Button>
-              <Button type="button" variant="outline" onClick={() => setShowPrivateKeyInput(false)}>
+              <Button type="submit" disabled={isLoggingIn}>
+                {isLoggingIn ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Logging in...
+                  </>
+                ) : (
+                  "Login"
+                )}
+              </Button>
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={() => setShowPrivateKeyInput(false)}
+                disabled={isLoggingIn}
+              >
                 Back
               </Button>
             </div>
