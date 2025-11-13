@@ -1,19 +1,33 @@
 
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Trash2 } from "lucide-react";
+import { Trash2, Edit, Loader2 } from "lucide-react";
 import { RegistryRecord } from "@bsv/sdk";
 
 interface RegistryCardProps {
   item: RegistryRecord;
   onRevoke: () => void;
+  onEdit: () => void;
+  isRevoking?: boolean;
 }
 
-export const RegistryCard = ({ item, onRevoke }: RegistryCardProps) => {
+export const RegistryCard = ({ item, onRevoke, onEdit, isRevoking = false }: RegistryCardProps) => {
   const getTitle = () => {
     if ('basketID' in item) return `Basket: ${item.basketID}`;
-    if ('protocolID' in item) return `Protocol: ${item.protocolID}`;
-    return `Certificate: ${item.type}`;
+    if ('protocolID' in item) return `Protocol: ${item.name}`;
+    return `Certificate: ${item.name}`;
+  };
+
+  const getSubtitle = () => {
+    if ('protocolID' in item) {
+      // Display the protocol ID array in a readable format
+      const [id, key] = item.protocolID;
+      return `Protocol ID: [${id}, "${key}"]`;
+    }
+    if ('type' in item) {
+      return `Type: ${item.type}`;
+    }
+    return null;
   };
 
   return (
@@ -25,20 +39,43 @@ export const RegistryCard = ({ item, onRevoke }: RegistryCardProps) => {
           </h3>
           <p className="text-sm text-muted-foreground">{item.description}</p>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="text-destructive hover:bg-destructive/10 self-end sm:self-start"
-          onClick={onRevoke}
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
+        <div className="flex gap-2 self-end sm:self-start">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="hover:bg-primary/10 text-primary"
+            onClick={onEdit}
+            disabled={isRevoking}
+          >
+            <Edit className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-destructive hover:bg-destructive/10"
+            onClick={onRevoke}
+            disabled={isRevoking}
+          >
+            {isRevoking ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Trash2 className="h-4 w-4" />
+            )}
+          </Button>
+        </div>
       </div>
 
       <div className="space-y-2">
-        <p className="text-sm">
-          <span className="font-medium">Name:</span> {item.name}
-        </p>
+        {getSubtitle() && (
+          <p className="text-sm">
+            <span className="font-medium">{getSubtitle()}</span>
+          </p>
+        )}
+        {'basketID' in item && (
+          <p className="text-sm">
+            <span className="font-medium">Name:</span> {item.name}
+          </p>
+        )}
         {item.documentationURL && (
           <p className="text-sm break-all">
             <span className="font-medium">Documentation:</span>{" "}
@@ -54,7 +91,7 @@ export const RegistryCard = ({ item, onRevoke }: RegistryCardProps) => {
         )}
         {'fields' in item && item.fields && (
           <div className="mt-4">
-            <h4 className="text-sm font-medium mb-2">Fields:</h4>
+            <h4 className="text-sm font-medium mb-2">Certificate Fields:</h4>
             <pre className="text-xs bg-muted p-2 rounded overflow-x-auto">
               {JSON.stringify(item.fields, null, 2)}
             </pre>
