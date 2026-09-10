@@ -11,7 +11,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@bsv/sdk": "^2.1.4",
+    "@bsv/sdk": "^2.5.0",
     "@bsv/wallet-toolbox-client": "^2.1.28",
     "@hookform/resolvers": "^3.9.0",
     "@radix-ui/react-accordion": "^1.2.0",
@@ -62,6 +62,9 @@
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^0.9.3",
     "zod": "^3.23.8"
+  },
+  "overrides": {
+    "@bsv/sdk": "^2.5.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.9.0",
